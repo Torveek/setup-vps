@@ -336,7 +336,7 @@ else
   log "Keeping ping (ICMP) enabled"
 fi
 
---- Install 3x-ui (optional - uncomment if needed) ---
+#--- Install 3x-ui (optional - uncomment if needed) ---
 echo
 read -rp "Do you want to install 3x-ui? (y/n): " INSTALL_3XUI
 if [[ "$INSTALL_3XUI" =~ ^[Yy]$ ]]; then
@@ -344,7 +344,7 @@ if [[ "$INSTALL_3XUI" =~ ^[Yy]$ ]]; then
   bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
 fi
 
---- Generate self-signed SSL (optional - uncomment if needed) ---
+#--- Generate self-signed SSL (optional - uncomment if needed) ---
 echo
 read -rp "Do you want to generate self-signed SSL certificates? (y/n): " GENERATE_SSL
 if [[ "$GENERATE_SSL" =~ ^[Yy]$ ]]; then
@@ -376,7 +376,7 @@ sysctl --system >/dev/null
 log "Testing SSH configuration..."
 sshd -t
 log "Restarting SSH service..."
-systemctl restart sshd
+systemctl restart ssh
 
 # --- Final output and post-steps ---
 IPV4="$(detect_ipv4)"
