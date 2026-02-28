@@ -65,96 +65,34 @@ check_ubuntu_version() {
 # ===== Docker installation function (Ubuntu 24.04 only) =====
 install_docker_tools() {
   local user="$1"
-
-  log "Installing Docker Engine, Compose plugin, and lazydocker..."
-
-  # ----------------------------
+  
+  log "Installing Docker, Docker Compose, and lazydocker for Ubuntu 24.04..."
+  
   # Install prerequisites
-  # ----------------------------
-  apt update
-  apt install -y ca-certificates curl gnupg jq
-
-  # Remove old Docker repo (avoid duplication issues)
-  rm -f /etc/apt/sources.list.d/docker.list
-
-  # Add Docker GPG key (modern method)
+  apt install -y apt-transport-https ca-certificates gnupg lsb-release software-properties-common
+  
+  # Add Docker's official GPG key
   install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-    | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
   chmod a+r /etc/apt/keyrings/docker.gpg
-
-  # Add Docker repository
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
-    > /etc/apt/sources.list.d/docker.list
-
+  
+  # Add the repository
+  echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+    $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+  
+  # Install Docker Engine
   apt update
-
-  # ----------------------------
-  # Install Docker packages
-  # ----------------------------
   apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-  # Enable & start Docker
-  systemctl enable docker
-  systemctl start docker
-
-  # Ensure docker group exists
-  getent group docker >/dev/null || groupadd docker
-
+  
   # Add user to docker group
   usermod -aG docker "$user"
-
-  # Get real home directory safely
-  USER_HOME=$(getent passwd "$user" | cut -d: -f6)
-  mkdir -p "$USER_HOME/.docker"
-  chown -R "$user:$user" "$USER_HOME/.docker"
-
-  log "Docker installed successfully"
-
-  # ==================================================
-  # Install lazydocker (robust GitHub asset detection)
-  # ==================================================
+  
+  # Install lazydocker
   log "Installing lazydocker..."
+  
+  curl https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | bash
 
-  ARCH=$(uname -m)
-  case "$ARCH" in
-    x86_64) MATCH="Linux_x86_64.tar.gz" ;;
-    aarch64) MATCH="Linux_arm64.tar.gz" ;;
-    armv7l) MATCH="Linux_armv7.tar.gz" ;;
-    *)
-      warn "Unsupported architecture: $ARCH (skipping lazydocker)"
-      return 0
-      ;;
-  esac
-
-  # Fetch latest release JSON from GitHub
-  LATEST_JSON=$(curl -fsSL https://api.github.com/repos/jesseduffield/lazydocker/releases/latest 2>/dev/null || echo "")
-
-  if [[ -z "$LATEST_JSON" ]]; then
-    warn "Could not fetch lazydocker release info (GitHub rate limit?). Skipping."
-    return 0
-  fi
-
-  DOWNLOAD_URL=$(echo "$LATEST_JSON" \
-    | jq -r ".assets[].browser_download_url | select(test(\"$MATCH\"))")
-
-  if [[ -z "$DOWNLOAD_URL" || "$DOWNLOAD_URL" == "null" ]]; then
-    warn "Could not determine correct lazydocker asset. Skipping."
-    return 0
-  fi
-
-  if curl -fL "$DOWNLOAD_URL" -o /tmp/lazydocker.tar.gz; then
-    tar -xzf /tmp/lazydocker.tar.gz -C /tmp
-    install /tmp/lazydocker /usr/local/bin/lazydocker
-    chmod +x /usr/local/bin/lazydocker
-    rm -f /tmp/lazydocker.tar.gz /tmp/lazydocker
-    log "lazydocker installed successfully"
-  else
-    warn "Failed to download lazydocker (skipping)"
-  fi
-
-  log "Docker tools installation completed"
 }
 
 # ===== Function to disable ping (ICMP) =====
