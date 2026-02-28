@@ -65,69 +65,87 @@ check_ubuntu_version() {
 # ===== Docker installation function (Ubuntu 24.04 only) =====
 install_docker_tools() {
   local user="$1"
-  
-  log "Installing Docker, Docker Compose, and lazydocker for Ubuntu 24.04..."
-  
-  # Install prerequisites
-  apt install -y apt-transport-https ca-certificates gnupg lsb-release software-properties-common
-  
-  # Add Docker's official GPG key
-  install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  chmod a+r /etc/apt/keyrings/docker.gpg
-  
-  # Add the repository
-  echo \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-    $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-  
-  # Install Docker Engine
+
+  log "Installing Docker Engine, Compose plugin, and lazydocker..."
+
+  # Ensure dependencies
   apt update
+  apt install -y ca-certificates curl gnupg jq
+
+  # Remove old Docker repo if exists (avoid key conflicts)
+  rm -f /etc/apt/sources.list.d/docker.list
+
+  # Add Docker GPG key (modern way)
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+    | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  chmod a+r /etc/apt/keyrings/docker.gpg
+
+  # Add Docker repository
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+    > /etc/apt/sources.list.d/docker.list
+
+  apt update
+
+  # Install Docker packages
   apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-  
+
+  # Enable & start Docker
+  systemctl enable docker
+  systemctl start docker
+
+  # Ensure docker group exists
+  getent group docker >/dev/null || groupadd docker
+
   # Add user to docker group
   usermod -aG docker "$user"
-  
-  # Install lazydocker
+
+  # Detect real home directory safely
+  USER_HOME=$(getent passwd "$user" | cut -d: -f6)
+  mkdir -p "$USER_HOME/.docker"
+  chown -R "$user:$user" "$USER_HOME/.docker"
+
+  log "Docker installed successfully"
+
+  # ----------------------------
+  # Install lazydocker (safe)
+  # ----------------------------
   log "Installing lazydocker..."
-  
-  # Detect architecture
+
   ARCH=$(uname -m)
-  case $ARCH in
-    x86_64)
-      ARCH="amd64"
-      ;;
-    aarch64)
-      ARCH="arm64"
-      ;;
-    armv7l)
-      ARCH="armv7"
-      ;;
+  case "$ARCH" in
+    x86_64) ARCH="amd64" ;;
+    aarch64) ARCH="arm64" ;;
+    armv7l) ARCH="armv7" ;;
     *)
-      warn "Unsupported architecture for lazydocker: $ARCH. Skipping lazydocker installation."
+      warn "Unsupported architecture: $ARCH (skipping lazydocker)"
       return 0
       ;;
   esac
-  
-  # Get latest version
-  LATEST_VERSION=$(curl -s https://api.github.com/repos/jesseduffield/lazydocker/releases/latest | jq -r .tag_name)
-  if [[ -n "$LATEST_VERSION" && "$LATEST_VERSION" != "null" ]]; then
-    VERSION_NUMBER=${LATEST_VERSION#v}
-    DOWNLOAD_URL="https://github.com/jesseduffield/lazydocker/releases/download/${LATEST_VERSION}/lazydocker_${VERSION_NUMBER}_Linux_${ARCH}.tar.gz"
-    
-    curl -L "$DOWNLOAD_URL" -o /tmp/lazydocker.tar.gz
-    tar -xzf /tmp/lazydocker.tar.gz -C /tmp lazydocker
-    mv /tmp/lazydocker /usr/local/bin/
+
+  # Try fetching latest version
+  LATEST_TAG=$(curl -fsSL https://api.github.com/repos/jesseduffield/lazydocker/releases/latest \
+      | jq -r '.tag_name' 2>/dev/null || echo "")
+
+  if [[ -z "$LATEST_TAG" || "$LATEST_TAG" == "null" ]]; then
+    warn "Could not fetch lazydocker version (GitHub rate-limit?). Using fallback version v0.23.3"
+    LATEST_TAG="v0.23.3"
+  fi
+
+  VERSION_NUMBER=${LATEST_TAG#v}
+  DOWNLOAD_URL="https://github.com/jesseduffield/lazydocker/releases/download/${LATEST_TAG}/lazydocker_${VERSION_NUMBER}_Linux_${ARCH}.tar.gz"
+
+  if curl -fL "$DOWNLOAD_URL" -o /tmp/lazydocker.tar.gz; then
+    tar -xzf /tmp/lazydocker.tar.gz -C /tmp
+    install /tmp/lazydocker /usr/local/bin/lazydocker
     chmod +x /usr/local/bin/lazydocker
-    rm -f /tmp/lazydocker.tar.gz
+    rm -f /tmp/lazydocker.tar.gz /tmp/lazydocker
     log "lazydocker installed successfully"
   else
-    warn "Could not fetch latest lazydocker version. Skipping installation."
+    warn "Failed to download lazydocker (skipping)"
   fi
-  
-  # Create docker directory in user home
-  sudo -u "$user" mkdir -p "/home/$user/.docker"
-  
+
   log "Docker tools installation completed"
 }
 
