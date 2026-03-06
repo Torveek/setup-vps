@@ -190,6 +190,47 @@ enable_ping() {
   log "Ping (ICMP) has been enabled"
 }
 
+# ===== Function to install Caddy server (Ubuntu 24.04 only) =====
+install_caddy() {
+  local user="$1"
+  
+  log "Installing Caddy server for Ubuntu 24.04..."
+  
+  # Add the Caddy Debian repository
+  local VERSION_CODENAME
+  VERSION_CODENAME=$(lsb_release -cs)
+  if [[ -z "$VERSION_CODENAME" || "$VERSION_CODENAME" == "n/a" ]]; then
+    VERSION_CODENAME="jammy" # fallback to jammy if codename detection fails
+  fi
+  
+  # Import the Caddy signing key
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  
+  # Add the repository to apt sources
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian $VERSION_CODENAME main" | tee /etc/apt/sources.list.d/caddy-stable.list
+  
+  # Update package lists
+  apt update
+  
+  # Install Caddy
+  apt install -y caddy
+  
+  # Enable and start Caddy service
+  systemctl enable caddy
+  systemctl start caddy
+  
+  # Check if Caddy is running
+  if systemctl is-active --quiet caddy; then
+    log "Caddy server installed and running successfully"
+  else
+    warn "Caddy server installation completed but service may not be running"
+  fi
+  
+  # Show basic Caddy info
+  log "Caddy version: $(caddy version)"
+  log "Caddy status: $(systemctl is-active caddy)"
+}
+
 # ===== Start =====
 require_root
 export DEBIAN_FRONTEND=noninteractive
@@ -324,7 +365,14 @@ if [[ "$GENERATE_SSL" =~ ^[Yy]$ ]]; then
   
   chmod 600 "$CERTDIR/selfsigned.key"
   chmod 644 "$CERTDIR/selfsigned.crt"
-  log "Self-signed certificates generated in $CERTDIR"
+ log "Self-signed certificates generated in $CERTDIR"
+fi
+
+#--- Install Caddy server (optional) ---
+echo
+read -rp "Do you want to install Caddy server? (y/n): " INSTALL_CADDY
+if [[ "$INSTALL_CADDY" =~ ^[Yy]$ ]]; then
+  install_caddy "$NEWUSER"
 fi
 
 # --- Enable BBR (via sysctl.d) ---
