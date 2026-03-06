@@ -142,7 +142,7 @@ EOF
   log "Ping (ICMP) has been disabled"
   
   # Test and show result
-  if sysctl net.ipv4.icmp_echo_ignore_all | grep -q "= 1"; then
+ if sysctl net.ipv4.icmp_echo_ignore_all | grep -q "= 1"; then
     log "Verified: ICMP echo ignore is enabled"
   else
     warn "ICMP echo ignore may not be properly configured"
@@ -161,7 +161,7 @@ enable_ping() {
   
   # Set kernel parameters to allow ping
   sysctl -w net.ipv4.icmp_echo_ignore_all=0 >/dev/null
-  sysctl -w net.ipv6.icmp.echo_ignore_all=0 >/dev/null
+  sysctl -w net.ipv6.icmp_echo_ignore_all=0 >/dev/null
   
   # Method 2: Remove UFW ICMP blocks
   local UFW_BEFORE="/etc/ufw/before.rules"
@@ -231,7 +231,7 @@ install_caddy() {
   log "Caddy status: $(systemctl is-active caddy)"
 }
 
-# ===== Start =====
+# ===== Main execution starts here =====
 require_root
 export DEBIAN_FRONTEND=noninteractive
 
@@ -241,7 +241,17 @@ if check_ubuntu_version; then
   IS_UBUNTU_24=true
 fi
 
-log "Updating system and installing dependencies…"
+# Collect user preferences with a single confirmation
+log "Server setup configuration"
+echo
+read -rp "This script will set up a secure server with various options. Do you want to continue with installation? (y/n): " CONFIRM_INSTALLATION
+
+if [[ ! "$CONFIRM_INSTALLATION" =~ ^[Yy]$ ]]; then
+  log "Installation cancelled by user."
+  exit 0
+fi
+
+log "System will be updated and dependencies installed..."
 apt update
 apt -y upgrade
 apt -y install curl ufw sudo openssl jq lsof
@@ -318,40 +328,41 @@ ufw allow 443/tcp
 # Apply and enable before restarting sshd
 ufw --force enable
 
-# --- Ask about Docker installation (only for Ubuntu 24.04) ---
+# --- Collect all installation choices ---
+echo
 if [[ "$IS_UBUNTU_24" == true ]]; then
-  echo
   read -rp "Do you want to install Docker, Docker Compose, and lazydocker? (y/n): " INSTALL_DOCKER
-  if [[ "$INSTALL_DOCKER" =~ ^[Yy]$ ]]; then
-    install_docker_tools "$NEWUSER"
-  else
-    log "Skipping Docker tools installation"
-  fi
 else
   INSTALL_DOCKER="n"
   log "Skipping Docker tools installation (requires Ubuntu 24.04)"
 fi
 
-# --- Ask about disabling ping (ICMP) ---
 echo
 read -rp "Do you want to disable ping (ICMP echo requests) for better stealth? (y/n): " DISABLE_PING
-if [[ "$DISABLE_PING" =~ ^[Yy]$ ]]; then
-  disable_ping
-else
-  log "Keeping ping (ICMP) enabled"
-fi
 
-#--- Install 3x-ui (optional - uncomment if needed) ---
 echo
 read -rp "Do you want to install 3x-ui? (y/n): " INSTALL_3XUI
+
+echo
+read -rp "Do you want to generate self-signed SSL certificates? (y/n): " GENERATE_SSL
+
+echo
+read -rp "Do you want to install Caddy server? (y/n): " INSTALL_CADDY
+
+# --- Execute all selected installations ---
+if [[ "$INSTALL_DOCKER" =~ ^[Yy]$ ]]; then
+  install_docker_tools "$NEWUSER"
+fi
+
+if [[ "$DISABLE_PING" =~ ^[Yy]$ ]]; then
+  disable_ping
+fi
+
 if [[ "$INSTALL_3XUI" =~ ^[Yy]$ ]]; then
   log "Installing 3x-ui…"
   bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
 fi
 
-#--- Generate self-signed SSL (optional - uncomment if needed) ---
-echo
-read -rp "Do you want to generate self-signed SSL certificates? (y/n): " GENERATE_SSL
 if [[ "$GENERATE_SSL" =~ ^[Yy]$ ]]; then
   CERTDIR="/etc/ssl/3xui"
   mkdir -p "$CERTDIR"
@@ -368,9 +379,6 @@ if [[ "$GENERATE_SSL" =~ ^[Yy]$ ]]; then
  log "Self-signed certificates generated in $CERTDIR"
 fi
 
-#--- Install Caddy server (optional) ---
-echo
-read -rp "Do you want to install Caddy server? (y/n): " INSTALL_CADDY
 if [[ "$INSTALL_CADDY" =~ ^[Yy]$ ]]; then
   install_caddy "$NEWUSER"
 fi
