@@ -196,41 +196,33 @@ install_caddy() {
   
   log "Installing Caddy server for Ubuntu 24.04..."
   
-  # Add the Caddy Debian repository
-  local VERSION_CODENAME
-  VERSION_CODENAME=$(lsb_release -cs)
-  if [[ -z "$VERSION_CODENAME" || "$VERSION_CODENAME" == "n/a" ]]; then
-    VERSION_CODENAME="jammy" # fallback to jammy if codename detection fails
-  fi
-  
   # Import the Caddy signing key
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   
-  # Add the repository to apt sources
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian $VERSION_CODENAME main" | tee /etc/apt/sources.list.d/caddy-stable.list
+  # Add the repository using the official auto-generated source line
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
   
-  # Update package lists
+  # Set proper permissions
+  chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+  
+  # Update and install
   apt update
-  
-  # Install Caddy
   apt install -y caddy
   
   # Enable and start Caddy service
   systemctl enable caddy
   systemctl start caddy
   
-  # Check if Caddy is running
   if systemctl is-active --quiet caddy; then
     log "Caddy server installed and running successfully"
   else
     warn "Caddy server installation completed but service may not be running"
   fi
   
-  # Show basic Caddy info
   log "Caddy version: $(caddy version)"
   log "Caddy status: $(systemctl is-active caddy)"
 }
-
 # ===== Main execution starts here =====
 require_root
 export DEBIAN_FRONTEND=noninteractive
